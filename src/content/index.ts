@@ -30,6 +30,10 @@ let activeEditable: HTMLElement | null = null;
 let statusRoot: HTMLDivElement | null = null;
 let statusTimer = 0;
 let skipNextInput = false;
+const graphemeSegmenter =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
 
 function isSupportedInput(element: Element): element is HTMLInputElement | HTMLTextAreaElement {
   if (element instanceof HTMLTextAreaElement) return true;
@@ -142,17 +146,90 @@ function getCursorOffset(target: HTMLElement): number | null {
   return probe.toString().length;
 }
 
+function getSelectionRange(target: HTMLElement): { start: number; end: number } | null {
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    if (target.selectionStart === null || target.selectionEnd === null) return null;
+    return { start: target.selectionStart, end: target.selectionEnd };
+  }
+
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  if (!target.contains(range.startContainer) || !target.contains(range.endContainer)) return null;
+
+  const startProbe = document.createRange();
+  startProbe.selectNodeContents(target);
+  startProbe.setEnd(range.startContainer, range.startOffset);
+
+  const endProbe = document.createRange();
+  endProbe.selectNodeContents(target);
+  endProbe.setEnd(range.endContainer, range.endOffset);
+
+  return {
+    start: startProbe.toString().length,
+    end: endProbe.toString().length
+  };
+}
+
 function setPlainText(target: HTMLElement, value: string, caret: number): void {
   suppressInput = true;
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-    target.value = value;
+    const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+    descriptor?.set?.call(target, value);
     target.setSelectionRange(caret, caret);
   } else {
-    target.textContent = value;
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const inserted = document.execCommand("insertText", false, value);
+    if (!inserted) {
+      target.textContent = value;
+    }
     setCaretInTextNode(target, caret);
   }
-  target.dispatchEvent(new Event("input", { bubbles: true }));
+  target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: value }));
   suppressInput = false;
+}
+
+function previousGraphemeStart(text: string, cursor: number): number {
+  if (cursor <= 0) return 0;
+
+  if (graphemeSegmenter) {
+    let previousIndex = 0;
+    for (const { index, segment } of graphemeSegmenter.segment(text)) {
+      const nextIndex = index + segment.length;
+      if (nextIndex >= cursor) {
+        return index;
+      }
+      previousIndex = index;
+    }
+    return previousIndex;
+  }
+
+  return Math.max(0, cursor - 1);
+}
+
+function deleteBackward(target: HTMLElement): boolean {
+  const selection = getSelectionRange(target);
+  if (!selection) return false;
+
+  const text = getPlainText(target);
+  if (selection.start !== selection.end) {
+    const nextText = `${text.slice(0, selection.start)}${text.slice(selection.end)}`;
+    setPlainText(target, nextText, selection.start);
+    return true;
+  }
+
+  if (selection.start === 0) return false;
+
+  const deleteStart = previousGraphemeStart(text, selection.start);
+  const nextText = `${text.slice(0, deleteStart)}${text.slice(selection.start)}`;
+  setPlainText(target, nextText, deleteStart);
+  return true;
 }
 
 function findPreviousTokenRange(text: string, cursor: number): { start: number; end: number } | null {
@@ -255,6 +332,13 @@ document.addEventListener("keydown", (event) => {
 
   if (STATE.settings.escapeBehavior.ctrlBypass && (event.ctrlKey || event.metaKey)) {
     skipNextInput = true;
+    return;
+  }
+
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Backspace") {
+    if (deleteBackward(target)) {
+      event.preventDefault();
+    }
     return;
   }
 
