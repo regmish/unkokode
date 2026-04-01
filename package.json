@@ -1,0 +1,20 @@
+{
+  "name": "kassen-klar-nepali-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "npm run build:pages && npm run build:background && npm run build:content",
+    "build:pages": "BUILD_TARGET=pages vite build",
+    "build:background": "BUILD_TARGET=background vite build",
+    "build:content": "BUILD_TARGET=content vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "rm -rf .test-dist && tsc -p tsconfig.test.json && printf '{\"type\":\"commonjs\"}' > .test-dist/package.json && node --test .test-dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.3.5"
+  }
+}
