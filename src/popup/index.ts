@@ -6,6 +6,13 @@ const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) throw new Error("Popup root not found");
 const app = appRoot;
 
+const NEPALI_SYMBOL_GROUPS = [
+  { label: "Vowels", symbols: ["अ", "आ", "इ", "ई", "उ", "ऊ", "ए", "ऐ", "ओ", "औ", "ऋ"] },
+  { label: "Marks", symbols: ["ं", "ँ", "ः", "्", "़", "ऽ", "ॐ"] },
+  { label: "Digits", symbols: ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"] },
+  { label: "Punctuation", symbols: ["।", "॥", "॰", "₹", "ञ", "ङ", "ञ्", "त्र", "ज्ञ", "क्ष"] }
+] as const;
+
 function styles(): string {
   return `
     <style>
@@ -17,11 +24,11 @@ function styles(): string {
       }
       body {
         margin: 0;
-        min-width: 360px;
+        min-width: 560px;
         background: #f8f9fa;
       }
       .popup {
-        width: 360px;
+        width: 560px;
         padding: 12px;
         box-sizing: border-box;
       }
@@ -75,14 +82,17 @@ function styles(): string {
       }
       .workspace {
         display: grid;
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .workspace .pane:first-child {
+        border-right: 1px solid #e8eaed;
       }
       .pane {
         position: relative;
         padding: 14px 16px 16px;
       }
       .pane + .pane {
-        border-top: 1px solid #e8eaed;
+        border-top: 0;
       }
       .pane-label {
         display: block;
@@ -146,14 +156,85 @@ function styles(): string {
         bottom: 12px;
       }
       .status {
-        padding: 10px 16px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px 12px 10px;
         font-size: 12px;
         color: #5f6368;
         border-top: 1px solid #e8eaed;
       }
+      .status-copy {
+        min-width: 0;
+      }
+      .utility-button {
+        flex: 0 0 auto;
+        width: 32px;
+        height: 32px;
+      }
       .shortcut {
         color: #1a73e8;
         font-weight: 500;
+      }
+      .symbol-drawer {
+        border-top: 1px solid #e8eaed;
+        background: #fff;
+        padding: 12px 12px 10px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 16px;
+      }
+      .symbol-drawer[hidden] {
+        display: none;
+      }
+      .symbol-group {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+      }
+      .symbol-group-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: #5f6368;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .symbol-grid {
+        display: grid;
+        gap: 6px;
+      }
+      .symbol-chip {
+        width: 100%;
+        height: 34px;
+        padding: 0 8px;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
+        background: #fff;
+        color: #202124;
+        font: inherit;
+        font-size: 18px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+      .symbol-chip:hover {
+        background: #f8f9fa;
+        border-color: #c6dafc;
+      }
+      .symbol-group:nth-child(1) .symbol-grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+      .symbol-group:nth-child(2) .symbol-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      .symbol-group:nth-child(3) .symbol-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+      .symbol-group:nth-child(4) .symbol-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
       }
     </style>
   `;
@@ -165,6 +246,26 @@ function gearIcon(): string {
 
 function copyIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10z"></path><path d="M19 5H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16h-9V7h9z"></path></svg>`;
+}
+
+function keyboardIcon(): string {
+  return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.75" y="5.75" width="18.5" height="12.5" rx="2.25" stroke="currentColor" stroke-width="1.5"></rect><rect x="5.25" y="8.25" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="8" y="8.25" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="10.75" y="8.25" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="13.5" y="8.25" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="16.25" y="8.25" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="5.25" y="11" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="8" y="11" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="10.75" y="11" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="13.5" y="11" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="16.25" y="11" width="1.75" height="1.75" rx=".35" fill="currentColor"></rect><rect x="7.25" y="14.25" width="9.5" height="1.75" rx=".45" fill="currentColor"></rect></svg>`;
+}
+
+function renderSymbolGroups(): string {
+  return NEPALI_SYMBOL_GROUPS.map(
+    (group) => `<div class="symbol-group">
+      <div class="symbol-group-label">${group.label}</div>
+      <div class="symbol-grid">
+        ${group.symbols
+          .map(
+            (symbol) =>
+              `<button class="symbol-chip" type="button" data-symbol="${symbol}" aria-label="Insert ${symbol}">${symbol}</button>`
+          )
+          .join("")}
+      </div>
+    </div>`
+  ).join("");
 }
 
 async function copyText(text: string): Promise<void> {
@@ -222,19 +323,44 @@ async function render(): Promise<void> {
             </div>
           </div>
         </div>
-        <div id="status" class="status">On-page typing is ${settings.wordByWordConversion ? "on" : "off"}. Toggle with <span class="shortcut">Alt+Shift+N</span>.</div>
+        <div id="status" class="status">
+          <button id="toggle-symbols" class="icon-button utility-button" type="button" aria-label="Open Nepali symbols keyboard" aria-expanded="false">${keyboardIcon()}</button>
+          <div class="status-copy">On-page typing is ${settings.wordByWordConversion ? "on" : "off"}. Toggle with <span class="shortcut">Alt+Shift+N</span>.</div>
+        </div>
+        <div id="symbol-drawer" class="symbol-drawer" hidden>
+          ${renderSymbolGroups()}
+        </div>
       </div>
     </div>`;
 
   const source = document.querySelector<HTMLTextAreaElement>("#source-text");
   const output = document.querySelector<HTMLSpanElement>("#output-text");
   const status = document.querySelector<HTMLDivElement>("#status");
+  const statusCopy = document.querySelector<HTMLDivElement>(".status-copy");
   const copyButton = document.querySelector<HTMLButtonElement>("#copy-output");
   const openSettings = document.querySelector<HTMLButtonElement>("#open-settings");
+  const toggleSymbols = document.querySelector<HTMLButtonElement>("#toggle-symbols");
+  const symbolDrawer = document.querySelector<HTMLDivElement>("#symbol-drawer");
 
   const updateOutput = (): void => {
     if (!source || !output) return;
     output.textContent = renderOutput(source.value, mode, settings) || "यहाँ नेपाली देखिन्छ";
+  };
+
+  const setStatusMessage = (message: string): void => {
+    if (!statusCopy) return;
+    statusCopy.innerHTML = message;
+  };
+
+  const insertAtCursor = (value: string): void => {
+    if (!source) return;
+    const start = source.selectionStart ?? source.value.length;
+    const end = source.selectionEnd ?? source.value.length;
+    source.value = `${source.value.slice(0, start)}${value}${source.value.slice(end)}`;
+    const nextCaret = start + value.length;
+    source.setSelectionRange(nextCaret, nextCaret);
+    source.focus();
+    updateOutput();
   };
 
   source?.addEventListener("input", updateOutput);
@@ -245,12 +371,32 @@ async function render(): Promise<void> {
     const text = output?.textContent?.trim() || "";
     if (!text) return;
     await copyText(text);
-    if (status) {
-      status.textContent = "Copied transliterated text.";
+    if (statusCopy) {
+      setStatusMessage("Copied transliterated text.");
       window.setTimeout(() => {
-        status.innerHTML = `On-page typing is ${settings.wordByWordConversion ? "on" : "off"}. Toggle with <span class="shortcut">Alt+Shift+N</span>.`;
+        setStatusMessage(`On-page typing is ${settings.wordByWordConversion ? "on" : "off"}. Toggle with <span class="shortcut">Alt+Shift+N</span>.`);
       }, 1200);
     }
+  });
+
+  toggleSymbols?.addEventListener("click", () => {
+    const isHidden = symbolDrawer?.hasAttribute("hidden") ?? true;
+    if (!symbolDrawer) return;
+    if (isHidden) {
+      symbolDrawer.removeAttribute("hidden");
+      toggleSymbols.setAttribute("aria-expanded", "true");
+    } else {
+      symbolDrawer.setAttribute("hidden", "true");
+      toggleSymbols.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-symbol]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const symbol = button.dataset.symbol;
+      if (!symbol) return;
+      insertAtCursor(symbol);
+    });
   });
 
   openSettings?.addEventListener("click", async () => {
