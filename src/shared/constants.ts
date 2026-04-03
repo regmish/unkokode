@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   suggestionsEnabled: true,
   contenteditableEnabled: true,
   wordByWordConversion: true,
+  floatingPanelEnabled: true,
   debug: false,
   siteRules: {
     allow: [],

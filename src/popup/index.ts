@@ -244,6 +244,10 @@ function gearIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.08 7.08 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.23-1.12.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 7.48a.5.5 0 0 0 .12.64l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94L2.82 13.2a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .49.42h3.8a.5.5 0 0 0 .49-.42l.36-2.54c.58-.23 1.13-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5"></path></svg>`;
 }
 
+function pinIcon(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor" aria-hidden="true"><g><rect fill="none" height="24" width="24"/></g><g><path d="M16,9V4l1,0c0.55,0,1-0.45,1-1v0c0-0.55-0.45-1-1-1H7C6.45,2,6,2.45,6,3v0 c0,0.55,0.45,1,1,1l1,0v5c0,1.66-1.34,3-3,3h0v2h5.97v7l1,1l1-1v-7H19v-2h0C17.34,12,16,10.66,16,9z" fill-rule="evenodd"/></g></svg>`;
+}
+
 function copyIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10z"></path><path d="M19 5H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16h-9V7h9z"></path></svg>`;
 }
@@ -297,6 +301,15 @@ async function render(): Promise<void> {
   const settings = await loadSettings();
   const mode = settings.defaultMode;
 
+  async function openFloatingPanelFromPopup(): Promise<void> {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error("No active tab found");
+    const response = await chrome.tabs.sendMessage(tab.id, { type: "OPEN_FLOATING_PANEL" } as ExtensionMessage);
+    if (!response?.ok) {
+      throw new Error(response?.error || "Floating panel is not available on this page.");
+    }
+  }
+
   app.innerHTML = `${styles()}
     <div class="popup">
       <div class="panel">
@@ -308,7 +321,10 @@ async function render(): Promise<void> {
               <h1>English to नेपाली</h1>
             </div>
           </div>
-          <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">${gearIcon()}</button>
+          <div style="display:flex; gap:4px;">
+            ${settings.floatingPanelEnabled ? `<button id="open-floating-panel" class="icon-button" type="button" aria-label="Open floating page panel">${pinIcon()}</button>` : ""}
+            <button id="open-settings" class="icon-button" type="button" aria-label="Open settings">${gearIcon()}</button>
+          </div>
         </div>
         <div class="workspace">
           <div class="pane">
@@ -339,6 +355,7 @@ async function render(): Promise<void> {
   const statusCopy = document.querySelector<HTMLDivElement>(".status-copy");
   const copyButton = document.querySelector<HTMLButtonElement>("#copy-output");
   const openSettings = document.querySelector<HTMLButtonElement>("#open-settings");
+  const openFloatingPanel = document.querySelector<HTMLButtonElement>("#open-floating-panel");
   const toggleSymbols = document.querySelector<HTMLButtonElement>("#toggle-symbols");
   const symbolDrawer = document.querySelector<HTMLDivElement>("#symbol-drawer");
 
@@ -402,6 +419,16 @@ async function render(): Promise<void> {
   openSettings?.addEventListener("click", async () => {
     await chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" } as ExtensionMessage);
     window.close();
+  });
+
+  openFloatingPanel?.addEventListener("click", async () => {
+    try {
+      await openFloatingPanelFromPopup();
+      window.close();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Floating panel is not available on this page.";
+      setStatusMessage(message);
+    }
   });
 }
 

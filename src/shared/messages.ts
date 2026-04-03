@@ -7,6 +7,7 @@ export type ExtensionMessage =
   | { type: "TOGGLE_SITE"; hostname: string; enabled: boolean }
   | { type: "SET_TAB_ENABLED"; tabId?: number; enabled: boolean }
   | { type: "SET_MODE"; mode: TransliterationMode; tabId?: number }
+  | { type: "OPEN_FLOATING_PANEL" }
   | { type: "OPEN_OPTIONS" }
   | { type: "PING" };
 

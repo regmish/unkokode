@@ -19,6 +19,7 @@ export type ExtensionSettings = {
   suggestionsEnabled: boolean;
   contenteditableEnabled: boolean;
   wordByWordConversion: boolean;
+  floatingPanelEnabled: boolean;
   debug: boolean;
   siteRules: SiteRules;
   customMappings: Record<string, string>;

@@ -59,6 +59,7 @@ function render(settings: ExtensionSettings): void {
         <h2>Typing behavior</h2>
         <div class="switch-row"><div><strong>Enable in contenteditable</strong><div class="hint">Best for simple rich text fields, not full document editors</div></div><input id="contenteditableEnabled" class="switch" type="checkbox" ${settings.contenteditableEnabled ? "checked" : ""}></div>
         <div class="switch-row"><div><strong>Convert completed words while typing</strong><div class="hint">Transliterates when you press space, punctuation, tab, enter, or leave the field</div></div><input id="wordByWordConversion" class="switch" type="checkbox" ${settings.wordByWordConversion ? "checked" : ""}></div>
+        <div class="switch-row"><div><strong>Enable floating page panel</strong><div class="hint">Lets you open a draggable translator panel on the page that stays open until you close it</div></div><input id="floatingPanelEnabled" class="switch" type="checkbox" ${settings.floatingPanelEnabled ? "checked" : ""}></div>
         <div class="switch-row"><div><strong>Brace escape {text}</strong><div class="hint">Keep explicit text in English</div></div><input id="escapeBrace" class="switch" type="checkbox" ${settings.escapeBehavior.brace ? "checked" : ""}></div>
         <div class="switch-row"><div><strong>Slash escape /token</strong><div class="hint">Keep a token literal</div></div><input id="escapeSlash" class="switch" type="checkbox" ${settings.escapeBehavior.slash ? "checked" : ""}></div>
         <div class="switch-row"><div><strong>Ctrl bypass</strong><div class="hint">Hold Ctrl while typing to bypass transliteration</div></div><input id="escapeCtrl" class="switch" type="checkbox" ${settings.escapeBehavior.ctrlBypass ? "checked" : ""}></div>
@@ -85,6 +86,7 @@ function render(settings: ExtensionSettings): void {
       suggestionsEnabled: (app.querySelector<HTMLSelectElement>("#suggestionsEnabled")?.value ?? "true") === "true",
       contenteditableEnabled: app.querySelector<HTMLInputElement>("#contenteditableEnabled")?.checked ?? true,
       wordByWordConversion: app.querySelector<HTMLInputElement>("#wordByWordConversion")?.checked ?? true,
+      floatingPanelEnabled: app.querySelector<HTMLInputElement>("#floatingPanelEnabled")?.checked ?? true,
       siteRules: {
         block: (app.querySelector<HTMLTextAreaElement>("#blockedSites")?.value ?? "").split(/\n+/).map((item) => item.trim()).filter(Boolean),
         allow: (app.querySelector<HTMLTextAreaElement>("#allowedSites")?.value ?? "").split(/\n+/).map((item) => item.trim()).filter(Boolean)

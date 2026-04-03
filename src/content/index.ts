@@ -1,5 +1,5 @@
 import { ExtensionMessage } from "../shared/messages";
-import { transliterateWordAtCursor, transliterateWord } from "../shared/transliteration/engine";
+import { transliterateText, transliterateWordAtCursor, transliterateWord } from "../shared/transliteration/engine";
 import { ExtensionSettings, TransliterationMode } from "../shared/types";
 
 type RuntimeContext = {
@@ -17,6 +17,7 @@ const STATE: RuntimeContext = {
     suggestionsEnabled: true,
     contenteditableEnabled: true,
     wordByWordConversion: true,
+    floatingPanelEnabled: true,
     debug: false,
     siteRules: { allow: [], block: [] },
     customMappings: {},
@@ -30,6 +31,11 @@ let activeEditable: HTMLElement | null = null;
 let statusRoot: HTMLDivElement | null = null;
 let statusTimer = 0;
 let skipNextInput = false;
+let floatingPanelRoot: HTMLDivElement | null = null;
+let floatingPanelSource: HTMLTextAreaElement | null = null;
+let floatingPanelOutput: HTMLDivElement | null = null;
+let floatingPanelStatus: HTMLDivElement | null = null;
+let floatingDragSession: { pointerId: number; offsetX: number; offsetY: number } | null = null;
 const graphemeSegmenter =
   typeof Intl !== "undefined" && "Segmenter" in Intl
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -89,6 +95,247 @@ function showStatus(message: string): void {
   statusTimer = window.setTimeout(() => {
     if (statusRoot) statusRoot.style.display = "none";
   }, 1400);
+}
+
+function panelCopyIcon(): string {
+  return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10z"></path><path d="M19 5H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16h-9V7h9z"></path></svg>';
+}
+
+function panelCloseIcon(): string {
+  return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6 18 18M18 6 6 18" stroke="currentColor" stroke-linecap="round" stroke-width="2"></path></svg>';
+}
+
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const helper = document.createElement("textarea");
+  helper.value = text;
+  helper.setAttribute("readonly", "true");
+  helper.style.position = "fixed";
+  helper.style.opacity = "0";
+  document.body.appendChild(helper);
+  helper.select();
+  document.execCommand("copy");
+  helper.remove();
+}
+
+function ensureFloatingPanel(): HTMLDivElement {
+  if (floatingPanelRoot && floatingPanelSource && floatingPanelOutput && floatingPanelStatus) {
+    return floatingPanelRoot;
+  }
+
+  const root = document.createElement("div");
+  root.setAttribute("data-nepali-floating-panel", "true");
+  root.style.position = "fixed";
+  root.style.top = "24px";
+  root.style.left = "24px";
+  root.style.width = "min(540px, calc(100vw - 32px))";
+  root.style.zIndex = "2147483647";
+  root.style.background = "#fff";
+  root.style.border = "1px solid #dadce0";
+  root.style.borderRadius = "16px";
+  root.style.boxShadow = "0 12px 36px rgba(60, 64, 67, 0.18)";
+  root.style.color = "#202124";
+  root.style.font = '14px/1.4 Roboto, "Noto Sans Devanagari", "Segoe UI", sans-serif';
+  root.style.overflow = "hidden";
+
+  const header = document.createElement("div");
+  header.style.display = "flex";
+  header.style.alignItems = "center";
+  header.style.justifyContent = "space-between";
+  header.style.gap = "12px";
+  header.style.padding = "12px 14px";
+  header.style.borderBottom = "1px solid #e8eaed";
+  header.style.cursor = "move";
+  header.style.userSelect = "none";
+
+  const titleWrap = document.createElement("div");
+  const title = document.createElement("div");
+  title.textContent = "UnkoKode Panel";
+  title.style.fontSize = "15px";
+  title.style.fontWeight = "600";
+  const subtitle = document.createElement("div");
+  subtitle.textContent = "Drag anywhere by the header";
+  subtitle.style.fontSize = "12px";
+  subtitle.style.color = "#5f6368";
+  titleWrap.append(title, subtitle);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.setAttribute("aria-label", "Close floating panel");
+  closeButton.innerHTML = panelCloseIcon();
+  closeButton.style.width = "32px";
+  closeButton.style.height = "32px";
+  closeButton.style.border = "0";
+  closeButton.style.borderRadius = "999px";
+  closeButton.style.background = "transparent";
+  closeButton.style.color = "#5f6368";
+  closeButton.style.display = "inline-flex";
+  closeButton.style.alignItems = "center";
+  closeButton.style.justifyContent = "center";
+  closeButton.style.cursor = "pointer";
+  closeButton.style.flex = "0 0 auto";
+
+  const body = document.createElement("div");
+  body.style.display = "grid";
+  body.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+
+  const sourcePane = document.createElement("div");
+  sourcePane.style.padding = "14px";
+  sourcePane.style.borderRight = "1px solid #e8eaed";
+
+  const sourceLabel = document.createElement("div");
+  sourceLabel.textContent = "English";
+  sourceLabel.style.fontSize = "12px";
+  sourceLabel.style.fontWeight = "600";
+  sourceLabel.style.color = "#5f6368";
+  sourceLabel.style.marginBottom = "10px";
+
+  const source = document.createElement("textarea");
+  source.setAttribute("data-nepali-ignore", "true");
+  source.placeholder = "Type in English";
+  source.style.width = "100%";
+  source.style.minHeight = "168px";
+  source.style.border = "0";
+  source.style.outline = "none";
+  source.style.resize = "vertical";
+  source.style.font = '24px/1.35 Roboto, "Noto Sans Devanagari", "Segoe UI", sans-serif';
+  source.style.color = "#202124";
+  source.style.background = "transparent";
+  source.style.boxSizing = "border-box";
+  sourcePane.append(sourceLabel, source);
+
+  const outputPane = document.createElement("div");
+  outputPane.style.padding = "14px";
+  outputPane.style.position = "relative";
+
+  const outputLabel = document.createElement("div");
+  outputLabel.textContent = "Nepali";
+  outputLabel.style.fontSize = "12px";
+  outputLabel.style.fontWeight = "600";
+  outputLabel.style.color = "#5f6368";
+  outputLabel.style.marginBottom = "10px";
+
+  const output = document.createElement("div");
+  output.textContent = "यहाँ नेपाली देखिन्छ";
+  output.style.minHeight = "168px";
+  output.style.paddingRight = "44px";
+  output.style.font = '24px/1.35 Roboto, "Noto Sans Devanagari", "Segoe UI", sans-serif';
+  output.style.wordBreak = "break-word";
+  output.style.whiteSpace = "pre-wrap";
+
+  const copyButton = document.createElement("button");
+  copyButton.type = "button";
+  copyButton.setAttribute("aria-label", "Copy transliterated text");
+  copyButton.innerHTML = panelCopyIcon();
+  copyButton.style.position = "absolute";
+  copyButton.style.right = "12px";
+  copyButton.style.bottom = "12px";
+  copyButton.style.width = "32px";
+  copyButton.style.height = "32px";
+  copyButton.style.border = "0";
+  copyButton.style.borderRadius = "999px";
+  copyButton.style.background = "transparent";
+  copyButton.style.color = "#5f6368";
+  copyButton.style.display = "inline-flex";
+  copyButton.style.alignItems = "center";
+  copyButton.style.justifyContent = "center";
+  copyButton.style.cursor = "pointer";
+
+  outputPane.append(outputLabel, output, copyButton);
+  body.append(sourcePane, outputPane);
+
+  const status = document.createElement("div");
+  status.textContent = "This panel stays open until you close it.";
+  status.style.padding = "10px 14px 14px";
+  status.style.borderTop = "1px solid #e8eaed";
+  status.style.fontSize = "12px";
+  status.style.color = "#5f6368";
+
+  header.append(titleWrap, closeButton);
+  root.append(header, body, status);
+  document.documentElement.appendChild(root);
+
+  const clampPanelPosition = (): void => {
+    const maxLeft = Math.max(8, window.innerWidth - root.offsetWidth - 8);
+    const maxTop = Math.max(8, window.innerHeight - root.offsetHeight - 8);
+    const left = Math.min(maxLeft, Math.max(8, root.offsetLeft));
+    const top = Math.min(maxTop, Math.max(8, root.offsetTop));
+    root.style.left = `${left}px`;
+    root.style.top = `${top}px`;
+  };
+
+  header.addEventListener("pointerdown", (event) => {
+    if (!(event.target instanceof Element) || event.target.closest("button")) return;
+    floatingDragSession = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - root.offsetLeft,
+      offsetY: event.clientY - root.offsetTop
+    };
+    header.setPointerCapture(event.pointerId);
+  });
+
+  header.addEventListener("pointermove", (event) => {
+    if (!floatingDragSession || floatingDragSession.pointerId !== event.pointerId) return;
+    root.style.left = `${event.clientX - floatingDragSession.offsetX}px`;
+    root.style.top = `${event.clientY - floatingDragSession.offsetY}px`;
+    clampPanelPosition();
+  });
+
+  header.addEventListener("pointerup", (event) => {
+    if (!floatingDragSession || floatingDragSession.pointerId !== event.pointerId) return;
+    floatingDragSession = null;
+    header.releasePointerCapture(event.pointerId);
+  });
+
+  header.addEventListener("pointercancel", () => {
+    floatingDragSession = null;
+  });
+
+  closeButton.addEventListener("click", () => {
+    root.remove();
+    floatingPanelRoot = null;
+    floatingPanelSource = null;
+    floatingPanelOutput = null;
+    floatingPanelStatus = null;
+  });
+
+  copyButton.addEventListener("click", async () => {
+    const text = floatingPanelOutput?.textContent?.trim() || "";
+    if (!text) return;
+    await copyText(text);
+    if (floatingPanelStatus) floatingPanelStatus.textContent = "Copied transliterated text.";
+    window.setTimeout(() => {
+      if (floatingPanelStatus) floatingPanelStatus.textContent = "This panel stays open until you close it.";
+    }, 1200);
+  });
+
+  source.addEventListener("input", () => {
+    updateFloatingPanelOutput();
+  });
+
+  window.addEventListener("resize", clampPanelPosition);
+
+  floatingPanelRoot = root;
+  floatingPanelSource = source;
+  floatingPanelOutput = output;
+  floatingPanelStatus = status;
+  return root;
+}
+
+function updateFloatingPanelOutput(): void {
+  if (!floatingPanelSource || !floatingPanelOutput) return;
+  const translated = transliterateText(floatingPanelSource.value, STATE.mode, STATE.settings.customMappings);
+  floatingPanelOutput.textContent = translated || "यहाँ नेपाली देखिन्छ";
+}
+
+function openFloatingPanel(): void {
+  ensureFloatingPanel();
+  updateFloatingPanelOutput();
+  floatingPanelRoot?.style.removeProperty("display");
+  floatingPanelSource?.focus();
 }
 
 function getPlainText(target: HTMLElement): string {
@@ -323,6 +570,7 @@ async function refreshContext(): Promise<void> {
   if (wasEnabled !== STATE.enabled) {
     showStatus(STATE.enabled ? "Nepali typing on" : "Nepali typing off");
   }
+  updateFloatingPanelOutput();
 }
 
 document.addEventListener("keydown", (event) => {
@@ -377,10 +625,22 @@ document.addEventListener("focusout", () => {
   activeEditable = null;
 }, true);
 
-chrome.runtime.onMessage.addListener((message: { type?: string }) => {
+chrome.runtime.onMessage.addListener((message: ExtensionMessage | { type?: string }, _sender: unknown, sendResponse: (response: { ok: boolean; error?: string }) => void) => {
   if (message.type === "STATE_UPDATED") {
     void refreshContext();
+    sendResponse({ ok: true });
+    return;
   }
+  if (message.type === "OPEN_FLOATING_PANEL") {
+    if (!STATE.settings.floatingPanelEnabled) {
+      sendResponse({ ok: false, error: "Enable the floating page panel in Settings first." });
+      return;
+    }
+    openFloatingPanel();
+    sendResponse({ ok: true });
+    return;
+  }
+  sendResponse({ ok: true });
 });
 
 void refreshContext();
